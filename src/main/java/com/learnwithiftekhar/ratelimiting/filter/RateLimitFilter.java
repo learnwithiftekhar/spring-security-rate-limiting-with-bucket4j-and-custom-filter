@@ -27,7 +27,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         // 1. Extract the IP address (or API Key from headers)
-        String clientIp = request.getRemoteAddr();
+        String clientIp = getClientIp(request);
 
         // 2. Get the bucket for this specific IP
         Bucket tokenBucket = rateLimitingService.resolveBucket(clientIp);
@@ -42,8 +42,28 @@ public class RateLimitFilter extends OncePerRequestFilter {
         } else {
             // 5. Failure: Return 429 Too Many Requests
             long waitForRefill = probe.getNanosToWaitForRefill() / 1_000_000_000;
+            response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.addHeader("X-Rate-Limit-Retry-After-Seconds", String.valueOf(waitForRefill));
-            response.sendError(HttpStatus.TOO_MANY_REQUESTS.value(), "You have exhausted your API Request Quota");
+            response.setContentType("application/json");
+
+            String jsonResponse = """
+                {
+                    "status": %s,
+                    "error": "Too Many Requests",
+                    "message": "You have exhausted your API Request Quota",
+                    "retryAfterSeconds": %s
+                }
+                """.formatted(HttpStatus.TOO_MANY_REQUESTS.value(), waitForRefill);
+
+            response.getWriter().write(jsonResponse);
         }
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String xfHeader = request.getHeader("X-Forwarded-For");
+        if (xfHeader == null || xfHeader.isEmpty()) {
+            return request.getRemoteAddr();
+        }
+        return xfHeader.split(",")[0].trim();
     }
 }

@@ -2,28 +2,36 @@ package com.learnwithiftekhar.ratelimiting.service;
 
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
-import io.github.bucket4j.Bucket4j;
+import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.Refill;
+import io.github.bucket4j.distributed.proxy.ProxyManager;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 @Service
 public class RateLimitingService {
     // Storage for buckets (IP Address -> Bucket)
-    private final Map<String, Bucket> cache = new ConcurrentHashMap<>();
+    private final ProxyManager<String> proxyManager;
 
-    public Bucket resolveBucket(String apiKey) {
-        return cache.computeIfAbsent(apiKey, this::newBucket);
+    public RateLimitingService(ProxyManager<String> proxyManager) {
+        this.proxyManager = proxyManager;
     }
 
-    private Bucket newBucket(String apiKey) {
-        // Limit: 10 requests per 1 minute
-        Bandwidth limit = Bandwidth.classic(10, Refill.intervally(10, Duration.ofMinutes(1)));
-        return Bucket.builder()
-                .addLimit(limit)
+    public Bucket resolveBucket(String key) {
+        Supplier<BucketConfiguration> configSupplier = this::getConfig;
+
+        // This effectively says: "Get the bucket for this key from Redis.
+        // If it doesn't exist, create it using configSupplier."
+        return proxyManager.builder().build(key, configSupplier);
+    }
+
+    private BucketConfiguration getConfig() {
+        // Rule: 10 requests per 1 minute
+        // This state is stored in Redis
+        return BucketConfiguration.builder()
+                .addLimit(Bandwidth.classic(10, Refill.intervally(10, Duration.ofMinutes(1))))
                 .build();
     }
 }
