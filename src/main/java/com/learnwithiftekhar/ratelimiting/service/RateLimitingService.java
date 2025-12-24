@@ -12,6 +12,7 @@ import java.util.function.Supplier;
 
 @Service
 public class RateLimitingService {
+    private static final int REQUESTS_PER_MINUTE = 10;
     // Storage for buckets (IP Address -> Bucket)
     private final ProxyManager<String> proxyManager;
 
@@ -31,7 +32,7 @@ public class RateLimitingService {
         // Rule: 10 requests per 1 minute
         // This state is stored in Redis
         return BucketConfiguration.builder()
-                .addLimit(Bandwidth.classic(10, Refill.intervally(10, Duration.ofMinutes(1))))
+                .addLimit(Bandwidth.classic(REQUESTS_PER_MINUTE, Refill.intervally(REQUESTS_PER_MINUTE, Duration.ofMinutes(1))))
                 .build();
     }
 }
